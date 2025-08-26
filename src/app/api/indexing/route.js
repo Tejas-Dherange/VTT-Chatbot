@@ -83,9 +83,15 @@ function chunkCuesByLength(cues, maxLen = 400) {
 // --- 🔹 Main GET handler ---
 export async function GET(req) {
   try {
-    const baseFolder =
+    const { searchParams } = new URL(req.url);
+    const folderPath = searchParams.get("folderPath");
+    const collectionName = searchParams.get("collection") || "nodejs-course-vtts";
+    
+    // Use provided folder path or default
+    const baseFolder = folderPath || 
       process.env.VTT_BASE_FOLDER ||
       "D:\\GenAI-Cohort\\VTT-PRJ\\genai-cohort\\nodejs";
+      
     if (!fs.existsSync(baseFolder)) {
       return NextResponse.json(
         { error: "Base folder not found", path: baseFolder },
@@ -124,7 +130,7 @@ export async function GET(req) {
             new Document({
               pageContent: chunk.text,
               metadata: {
-                course: "nodejs-course",
+                course: collectionName.replace("-vtts", ""), // Remove suffix if present
                 module: moduleName,
                 file: fileName,
                 chunkId: `${fileName}-${i}`,
@@ -170,7 +176,7 @@ export async function GET(req) {
       vectorStorePromises.push(
         QdrantVectorStore.fromDocuments(batch, embeddings, {
           url: process.env.QDRANT_URL,
-          collectionName: "nodejs-course-vtts",
+          collectionName: collectionName,
           collectionConfig: { vectors: { size: 3072, distance: "Cosine" } },
         })
       );
@@ -182,6 +188,8 @@ export async function GET(req) {
       stored: docs.length,
       processedFiles,
       totalFiles: vttFiles.length,
+      collectionName,
+      baseFolder,
       errors: errors.length > 0 ? errors : undefined,
       summary: {
         totalDocuments: docs.length,
