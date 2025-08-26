@@ -1,6 +1,6 @@
 "use client";
 import React, { useState, useRef, useEffect } from "react";
-import { Send, Loader2, BookOpen, ChevronRight, Menu, X } from "lucide-react";
+import { Send, Loader2, BookOpen, ChevronRight, Menu, X, Trash2 } from "lucide-react";
 
 function Dashboard() {
   const [messages, setMessages] = useState([]);
@@ -10,7 +10,63 @@ function Dashboard() {
   const [selectedCollection, setSelectedCollection] = useState("nodejs-course-vtts");
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [collectionsLoading, setCollectionsLoading] = useState(true);
+  const [historyUpdateTrigger, setHistoryUpdateTrigger] = useState(0);
   const messagesEndRef = useRef(null);
+
+  // Check if we're on mobile/tablet and close sidebar by default
+  useEffect(() => {
+    const checkScreenSize = () => {
+      const isMobile = window.innerWidth < 768; // md breakpoint
+      setSidebarOpen(!isMobile);
+    };
+    
+    checkScreenSize();
+    window.addEventListener('resize', checkScreenSize);
+    
+    return () => window.removeEventListener('resize', checkScreenSize);
+  }, []);
+
+  // localStorage functions for chat history
+  const saveChatHistory = (collection, messages) => {
+    try {
+      const chatHistory = JSON.parse(localStorage.getItem('chatHistory') || '{}');
+      chatHistory[collection] = messages;
+      localStorage.setItem('chatHistory', JSON.stringify(chatHistory));
+    } catch (error) {
+      console.error('Error saving chat history:', error);
+    }
+  };
+
+  const loadChatHistory = (collection) => {
+    try {
+      const chatHistory = JSON.parse(localStorage.getItem('chatHistory') || '{}');
+      return chatHistory[collection] || [];
+    } catch (error) {
+      console.error('Error loading chat history:', error);
+      return [];
+    }
+  };
+
+  const clearChatHistory = (collection) => {
+    try {
+      const chatHistory = JSON.parse(localStorage.getItem('chatHistory') || '{}');
+      delete chatHistory[collection];
+      localStorage.setItem('chatHistory', JSON.stringify(chatHistory));
+      setMessages([]);
+      setHistoryUpdateTrigger(prev => prev + 1); // Force re-render to update indicators
+    } catch (error) {
+      console.error('Error clearing chat history:', error);
+    }
+  };
+
+  const hasMessageHistory = (collection) => {
+    try {
+      const chatHistory = JSON.parse(localStorage.getItem('chatHistory') || '{}');
+      return chatHistory[collection] && chatHistory[collection].length > 0;
+    } catch (error) {
+      return false;
+    }
+  };
 
   // Fetch collections from Qdrant
   const fetchCollections = async () => {
@@ -34,7 +90,23 @@ function Dashboard() {
 
   useEffect(() => {
     fetchCollections();
+    // Load chat history for default collection
+    const savedMessages = loadChatHistory(selectedCollection);
+    setMessages(savedMessages);
   }, []);
+
+  // Load chat history when collection changes
+  useEffect(() => {
+    const savedMessages = loadChatHistory(selectedCollection);
+    setMessages(savedMessages);
+  }, [selectedCollection]);
+
+  // Save chat history whenever messages change
+  useEffect(() => {
+    if (messages.length > 0) {
+      saveChatHistory(selectedCollection, messages);
+    }
+  }, [messages, selectedCollection]);
 
   // Auto-scroll to latest message
   useEffect(() => {
@@ -44,8 +116,11 @@ function Dashboard() {
   // Handle collection change
   const handleCollectionChange = (collection) => {
     setSelectedCollection(collection);
-    // Clear messages when switching collections
-    setMessages([]);
+    // Close sidebar on mobile after selection
+    if (window.innerWidth < 768) {
+      setSidebarOpen(false);
+    }
+    // Messages will be loaded automatically by the useEffect
   };
 
   // Format collection name for display
@@ -103,9 +178,14 @@ function Dashboard() {
     }
   };
   return (
-    <div className="flex h-[calc(100vh-64px)]">
+    <div className="flex h-[calc(100vh-64px)] relative">
       {/* Sidebar */}
-      <div className={`${sidebarOpen ? 'w-80' : 'w-0'} transition-all duration-300 overflow-hidden border-r bg-card`}>
+      <div className={`${
+        sidebarOpen ? 'w-80 md:w-80' : 'w-0'
+      } transition-all duration-300 overflow-hidden border-r bg-card 
+      ${sidebarOpen ? 'absolute md:relative' : ''} 
+      ${sidebarOpen ? 'z-50 md:z-auto' : ''} 
+      ${sidebarOpen ? 'h-full' : ''}`}>
         <div className="p-4 border-b">
           <h3 className="font-semibold text-lg flex items-center gap-2">
             <BookOpen size={20} />
@@ -141,10 +221,19 @@ function Dashboard() {
                   }`}
                 >
                   <div className="flex items-center justify-between">
-                    <div>
-                      <p className="font-medium text-sm">
-                        {formatCollectionName(collection)}
-                      </p>
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2">
+                        <p className="font-medium text-sm">
+                          {formatCollectionName(collection)}
+                        </p>
+                        {hasMessageHistory(collection) && (
+                          <div className={`w-2 h-2 rounded-full ${
+                            selectedCollection === collection 
+                              ? 'bg-primary-foreground/70' 
+                              : 'bg-blue-500'
+                          }`} title="Has chat history" />
+                        )}
+                      </div>
                       <p className={`text-xs mt-1 ${
                         selectedCollection === collection 
                           ? 'text-primary-foreground/70' 
@@ -164,45 +253,63 @@ function Dashboard() {
         </div>
       </div>
 
+      {/* Mobile Overlay */}
+      {sidebarOpen && (
+        <div 
+          className="fixed inset-0 bg-black/50 z-40 md:hidden"
+          onClick={() => setSidebarOpen(false)}
+        />
+      )}
+
       {/* Main Chat Area */}
-      <div className="flex-1 flex flex-col">
+      <div className="flex-1 flex flex-col min-w-0">
         {/* Header with toggle button */}
-        <div className="border-b bg-background p-4 flex items-center justify-between">
-          <div className="flex items-center gap-3">
+        <div className="border-b bg-background p-3 md:p-4 flex items-center justify-between">
+          <div className="flex items-center gap-2 md:gap-3 min-w-0 flex-1">
             <button
               onClick={() => setSidebarOpen(!sidebarOpen)}
-              className="p-2 hover:bg-muted rounded-lg transition-colors"
+              className="p-2 hover:bg-muted rounded-lg transition-colors shrink-0"
             >
               {sidebarOpen ? <X size={20} /> : <Menu size={20} />}
             </button>
-            <div>
-              <h1 className="font-semibold">
+            <div className="flex-1 min-w-0">
+              <h1 className="font-semibold text-sm md:text-base truncate">
                 {selectedCollection ? formatCollectionName(selectedCollection) : 'VTT Chat Assistant'}
               </h1>
-              <p className="text-sm text-muted-foreground">
+              <p className="text-xs md:text-sm text-muted-foreground truncate">
                 {selectedCollection ? `Chat with ${formatCollectionName(selectedCollection)} content` : 'Select a collection to start chatting'}
               </p>
             </div>
+            {messages.length > 0 && (
+              <button
+                onClick={() => clearChatHistory(selectedCollection)}
+                className="p-2 hover:bg-muted rounded-lg transition-colors text-muted-foreground hover:text-destructive shrink-0 flex items-center gap-1 md:gap-2"
+                title="Clear chat history"
+              >
+                <span className="hidden sm:inline text-xs md:text-sm">Delete History</span>
+                <Trash2 size={16} className="md:w-[18px] md:h-[18px]" />
+              </button>
+            )}
           </div>
         </div>
 
         {/* Chat Messages */}
-        <div className="flex-1 p-4 overflow-auto bg-muted/30">
+        <div className="flex-1 p-2 md:p-4 overflow-auto bg-muted/30">
           <div className="max-w-3xl mx-auto">
             {messages.length === 0 ? (
-              <div className="flex flex-col items-center justify-center h-full">
-                <h2 className="text-2xl font-bold text-center mb-2">
+              <div className="flex flex-col items-center justify-center h-full px-4">
+                <h2 className="text-xl md:text-2xl font-bold text-center mb-2">
                   {selectedCollection ? formatCollectionName(selectedCollection) : 'VTT Chat Assistant'}
                 </h2>
-                <p className="text-center text-muted-foreground mb-4">
+                <p className="text-center text-muted-foreground mb-4 text-sm md:text-base">
                   {selectedCollection 
                     ? `Ask questions about ${formatCollectionName(selectedCollection)} content`
                     : 'Select a collection from the sidebar to start chatting'
                   }
                 </p>
                 {selectedCollection && (
-                  <div className="w-full max-w-md bg-card border rounded-lg p-4">
-                    <p className="text-sm text-muted-foreground mb-2">
+                  <div className="w-full max-w-md bg-card border rounded-lg p-3 md:p-4">
+                    <p className="text-xs md:text-sm text-muted-foreground mb-2">
                       Try asking:
                     </p>
                     <div className="space-y-2">
@@ -224,7 +331,7 @@ function Dashboard() {
                 )}
               </div>
             ) : (
-              <div className="space-y-4 py-4">
+              <div className="space-y-3 md:space-y-4 py-4">
                 {messages.map((message, index) => (
                   <div
                     key={index}
@@ -233,13 +340,13 @@ function Dashboard() {
                     }`}
                   >
                     <div
-                      className={`max-w-[80%] rounded-lg px-4 py-2 ${
+                      className={`max-w-[85%] md:max-w-[80%] rounded-lg px-3 py-2 md:px-4 md:py-2 ${
                         message.role === "user"
                           ? "bg-primary text-primary-foreground"
                           : "bg-card border text-card-foreground"
                       }`}
                     >
-                      <p className="whitespace-pre-wrap">{message.content}</p>
+                      <p className="whitespace-pre-wrap text-sm md:text-base">{message.content}</p>
                     </div>
                   </div>
                 ))}
@@ -267,10 +374,10 @@ function Dashboard() {
         </div>
 
         {/* Input Section */}
-        <div className="border-t bg-background p-4">
+        <div className="border-t bg-background p-3 md:p-4">
           <div className="max-w-3xl mx-auto">
             <div className="flex items-end gap-2">
-              <div className="flex-1 bg-muted rounded-lg border px-4 py-2">
+              <div className="flex-1 bg-muted rounded-lg border px-3 py-2 md:px-4 md:py-2">
                 <textarea
                   value={inputMessage}
                   onChange={(e) => setInputMessage(e.target.value)}
@@ -281,7 +388,7 @@ function Dashboard() {
                     : "Select a collection first..."
                   }
                   disabled={!selectedCollection}
-                  className="w-full bg-transparent resize-none focus:outline-none min-h-[24px] max-h-[200px] disabled:opacity-50"
+                  className="w-full bg-transparent resize-none focus:outline-none min-h-[24px] max-h-[120px] md:max-h-[200px] disabled:opacity-50 text-sm md:text-base"
                   style={{ overflow: "hidden" }}
                   onInput={(e) => {
                     e.target.style.height = "auto";
@@ -293,13 +400,13 @@ function Dashboard() {
               <button
                 onClick={sendMessage}
                 disabled={isLoading || inputMessage.trim() === "" || !selectedCollection}
-                className="p-2 bg-primary text-primary-foreground rounded-lg disabled:opacity-50 disabled:cursor-not-allowed"
+                className="p-2 md:p-3 bg-primary text-primary-foreground rounded-lg disabled:opacity-50 disabled:cursor-not-allowed shrink-0"
                 title="Send Message"
               >
                 {isLoading ? (
-                  <Loader2 className="h-5 w-5 animate-spin" />
+                  <Loader2 className="h-4 w-4 md:h-5 md:w-5 animate-spin" />
                 ) : (
-                  <Send className="h-5 w-5" />
+                  <Send className="h-4 w-4 md:h-5 md:w-5" />
                 )}
               </button>
             </div>

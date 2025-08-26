@@ -1,5 +1,5 @@
 "use client";
-
+import { useUser } from "@clerk/nextjs";
 import React, { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -7,8 +7,30 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { AlertCircle, Upload, RefreshCw, FolderOpen } from "lucide-react";
 import FolderUpload from "@/components/FolderUpload/page";
-
+import Dashboard from "../dashboard/page";
+import { XCircleIcon } from "lucide-react";
 function AdminPage() {
+  const { isLoaded, isSignedIn, user } = useUser();
+
+  const allowedEmails = process.env.NEXT_PUBLIC_ADMIN_EMAILS ? JSON.parse(process.env.NEXT_PUBLIC_ADMIN_EMAILS) : [];
+
+  if (!isLoaded) return null; // or loading spinner
+
+  if (!isSignedIn) return <Dashboard />;
+
+  if (!allowedEmails.includes(user.primaryEmailAddress.emailAddress)) {
+  return (
+    <div className="flex flex-col justify-center items-center mt-20">
+      <div className="bg-red-100 border border-red-400 text-red-700 px-6 py-8 rounded-lg shadow-md flex flex-col items-center max-w-md">
+        <XCircleIcon className="w-12 h-12 mb-4" />
+        <h2 className="text-xl font-semibold mb-2">Access Denied</h2>
+        <p className="text-center text-red-700">
+          You are not authorized to view this page.
+        </p>
+      </div>
+    </div>
+  );
+}
   const [collections, setCollections] = useState([]);
   const [count, setCount] = useState(0);
   const [loading, setLoading] = useState(true);

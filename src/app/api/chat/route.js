@@ -80,12 +80,12 @@ export async function POST(request) {
       threeRewritesTextObject.rewrite3
     );
 
-    console.log(
-      "Relevant Chunks:",
-      relevantChunk1,
-      relevantChunk2,
-      relevantChunk3
-    );
+    // console.log(
+    //   "Relevant Chunks:",
+    //   relevantChunk1,
+    //   relevantChunk2,
+    //   relevantChunk3
+    // );
 
     //sorting docs
     function getTopUniqueDocs(docs, topN = 3) {
@@ -109,7 +109,7 @@ export async function POST(request) {
     }
 
     const top3 = getTopUniqueDocs(
-      [relevantChunk,relevantChunk1, relevantChunk2, relevantChunk3],
+      [relevantChunk, relevantChunk1, relevantChunk2, relevantChunk3],
       3
     );
     // console.log("Top 3 Docs:", JSON.stringify(top3));
@@ -119,50 +119,57 @@ export async function POST(request) {
     // Format collection name for display in prompt
     const formatCollectionName = (collection) => {
       return collection
-        .replace(/-vtts$/, '') // Remove -vtts suffix
-        .replace(/-/g, ' ') // Replace hyphens with spaces
+        .replace(/-vtts$/, "") // Remove -vtts suffix
+        .replace(/-/g, " ") // Replace hyphens with spaces
         .replace(/\b\w/g, (l) => l.toUpperCase()); // Capitalize first letter of each word
     };
 
     const courseName = formatCollectionName(selectedCollection);
 
     // log("Relevant Chunk:", relevantChunk);
-    const SYSTEM_PROMPT = `
+const SYSTEM_PROMPT = `
 You are an AI teaching assistant that answers student queries using transcript data (VTT files) 
-from the "${courseName}" course along with associated metadata such as course name, module name, video title, and timestamps.  
+from the "${courseName}" course along with metadata such as course name, module name, video title, and timestamps.
 
-Your task is to provide **clear, structured, and context-aware answers** as follows:
+Your responsibilities:
 
-1. If the answer is not found in the given context, respond with: "I don't know (Not found in context)."
-   - Do NOT hallucinate or assume details.
-   - You may optionally add a short clarification using your own knowledge, but clearly mention it is outside the context.  
+1. **Grounded Answers Only**
+   - Use ONLY the provided transcript context to generate answers.
+   - Do NOT hallucinate, assume, or fabricate details.
+   - If the answer is not found in the transcript, respond politely:
+     "I'm not sure about that from the course materials. (Not found in context)"
+   - Optionally, you may provide a short clarification from your own knowledge, but explicitly mark it as:
+     "(Outside the given course context)"
 
-2. If the answer is found in the context:
-   - Give a **concise explanation** of the concept.
-   - Provide the **course name**.
-   - Provide the **module name**.
-   - Provide the **video title**.
-   - Provide the **relevant timestamps** from the transcript.
-   - Calculate the **time required to watch the relevant part**:
-       - Input timestamps are in **minutes**.
-       - Convert the total duration into **hours, minutes, and seconds format** (hh:mm:ss).
+2. **Answer Style**
+   - Provide the explanation in a **teaching style similar to the instructor**, using their phrasing and flow wherever possible.
+   - Cover **only the topic requested in the user query**.
+   - Do NOT include unrelated content from other sections, videos, or examples.
+   - Maintain structured, step-by-step reasoning and examples if the instructor uses them, but stop once the topic ends.
 
-3. If the context is ambiguous or incomplete, ask the user clarifying questions instead of guessing.  
+3. **Mandatory Metadata**
+   When the answer is found in context, include the following fields in order:
+   a) Explanation: <detailed instructor-style explanation of the requested topic only>
+   b) Course Name: <course name>
+   c) Module Name: <module name>
+   d) Video Title: <video title>
+   e) Relevant Timestamps: <timestamps from transcript, automatically computed from the retrieved embedding metadata's startSeconds and endSeconds fields, converted into hh:mm:ss format>
+   f) Duration to Watch: <sum of all relevant chunks in hh:mm:ss format>
 
-### Output Format (strictly follow this order):
+   - Convert timestamps from **minutes.seconds** format to **hh:mm:ss**.
+   - Duration to Watch should only include chunks relevant to the requested topic.
 
-a) Explanation: <your concise explanation>  
-b) Course Name: <course name>  
-c) Module Name: <module name>  
-d) Video Title: <video title>  
-e) Relevant Timestamps: <timestamps>  
-f) Duration to Watch: <hh:mm:ss>  
+4. **Ambiguity Handling**
+   - If the transcript is incomplete, unclear, or provides multiple possible answers, ask clarifying questions instead of guessing.
 
 ---
 
-Context Data from "${courseName}" course:  
+Context Data from "${courseName}" course:
 ${JSON.stringify(top3)}
 `;
+
+
+
 
     const response = await client.chat.completions.create({
       model: "gpt-4.1",
@@ -178,12 +185,15 @@ ${JSON.stringify(top3)}
       message: "Responsed  successfully",
       data,
     });
-
   } catch (error) {
     console.error("Error in chat route:", error);
-    
+
     // Check if it's a collection-specific error
-    if (error.message && error.message.includes("Collection") && error.message.includes("does not exist")) {
+    if (
+      error.message &&
+      error.message.includes("Collection") &&
+      error.message.includes("does not exist")
+    ) {
       return NextResponse.json({
         status: 404,
         error: "Collection not found",
@@ -194,7 +204,8 @@ ${JSON.stringify(top3)}
     return NextResponse.json({
       status: 500,
       error: "Internal server error",
-      message: "An error occurred while processing your request. Please try again.",
+      message:
+        "An error occurred while processing your request. Please try again.",
     });
   }
 }
